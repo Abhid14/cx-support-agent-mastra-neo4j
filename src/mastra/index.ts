@@ -1,40 +1,27 @@
-import { Mastra } from '@mastra/core/mastra';
-import { LibSQLStore } from '@mastra/libsql';
-import { DuckDBStore } from '@mastra/duckdb';
-import { MastraCompositeStore } from '@mastra/core/storage';
-import {
-  MastraStorageExporter,
-  MastraPlatformExporter,
-  Observability,
-  SensitiveDataFilter,
-} from '@mastra/observability';
-import { agent } from './agents/agent';
-import { startScheduleTool, stopScheduleTool } from './tools/schedule-tools';
+import { Mastra } from "@mastra/core/mastra";
+import { AzureOpenAIGateway } from "@mastra/core/llm";
+import { MastraCompositeStore } from "@mastra/core/storage";
+import { agent } from "./agents/agent";
+import { azureDeployment } from "./models";
+import { supportTools } from "./support/tools";
+import { neo4jMemory } from "./support/memory";
+import { supportRoutes } from "./support/routes";
 
 export const mastra = new Mastra({
-  bundler: {
-    externals: ['@duckdb/node-bindings'],
-  },
-  agents: { agent },
-  tools: { startScheduleTool, stopScheduleTool },
-  storage: new MastraCompositeStore({
-    id: 'composite-storage',
-    default: new LibSQLStore({
-      id: 'mastra-storage',
-      url: process.env.TURSO_DATABASE_URL || 'file:./mastra.db',
-      authToken: process.env.TURSO_AUTH_TOKEN || undefined,
+  gateways: {
+    azure: new AzureOpenAIGateway({
+      resourceName: process.env.AZURE_RESOURCE_NAME?.trim() || "",
+      apiKey: process.env.AZURE_API_KEY?.trim(),
+      apiVersion: "v1",
+      useResponsesAPI: true,
+      deployments: [azureDeployment],
     }),
-    domains: {
-      observability: await new DuckDBStore().getStore('observability'),
-    },
-  }),
-  observability: new Observability({
-    configs: {
-      default: {
-        serviceName: 'mastra',
-        exporters: [new MastraStorageExporter(), new MastraPlatformExporter()],
-        spanOutputProcessors: [new SensitiveDataFilter()],
-      },
-    },
+  },
+  server: { apiRoutes: supportRoutes },
+  agents: { agent },
+  tools: supportTools,
+  storage: new MastraCompositeStore({
+    id: "neo4j-support-storage",
+    domains: { memory: neo4jMemory },
   }),
 });
